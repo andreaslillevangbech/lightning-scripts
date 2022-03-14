@@ -1,0 +1,8 @@
+cradle:
+  cabal:
+    - path: "src"
+      component: "lib:lightningscripts"
+
+    - path: "app/ChooseNodes.hs"
+      component: "lightningscripts:exe:choose_nodes"
+
