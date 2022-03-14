@@ -27,4 +27,6 @@ The program also needs a list of nodes that you want to pay, or be able to reach
 
 
 ## Shortcomings
-This approach ignores the issue of balances within channels. Channels are only measured by their capacities, which are public as opposed to balances. For a channel b/w A and B: Balance(A) + Balance(B) = Capacity(A<-->B)
+This approach ignores the issue of balances within channels. Channels are only measured by their capacities, which are public as opposed to balances. For a channel b/w A and B: Balance(A) + Balance(B) = Capacity(A<-->B).
+
+Also, this is clearly a greedy algorithm. Possibility to choose 2 or more nodes simultaneously to minimize path but not clear how to deal with combinations like that.
