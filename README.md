@@ -3,6 +3,11 @@
 Scripts for running a lightning node.
 The LnTools library has tools for exploring the visible network given the connected peers.
 
+You can also write math $2+2$ or 
+$$
+x = \int_0^t dN_t(s)
+$$
+
 ## Choosing nodes to connect with
 The program ChooseNodes expects a list of channels available. You might do something like 
 ```

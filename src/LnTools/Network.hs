@@ -2,87 +2,109 @@
 
 module LnTools.Network (
     GraphWithPath,
+    Graph (..),
     Path (..),
     parseChannels,
     getGraph,
 ) where
 
-import Data.Map (Map)
-import qualified Data.Map as M
+import Data.Map.Lazy (Map)
+import qualified Data.Map.Lazy as M
+import Data.Map.Merge.Lazy as M
 import Data.Set (Set)
 import qualified Data.Set as S
 import Data.Maybe (mapMaybe)
-import Data.List (foldl')
+import Data.Foldable (foldl', toList)
 import Data.Word (Word64)
 import LnTools (Channel (..), NodeId)
+
+import Debug.Trace
 
 -- Gives you one direction of a channel, so you have two of these for each channel
 data OneDirection = OneDirection
     { channel :: Channel
     , direction :: NodeId
-    } deriving (Eq, Ord)
+    } deriving (Eq, Ord, Show)
 
 -- Adjacency map
-type Adj = Map NodeId (Set OneDirection)
+type Adj = Map NodeId [OneDirection]
 
 -- Given a list of channels, split each channel into two directions
 parseChannels :: [Channel] -> Adj
 parseChannels = foldl' (flip insertChannel) mempty
     where
         insertChannel chan = 
-            (insert <$> node1 <*> dir1) chan
-            . (insert <$> node2 <*> dir2) chan
-        dir1 = OneDirection <$> id <*> node2
-        dir2 = OneDirection <$> id <*> node1
-        insert k v = M.insertWith (<>) k (S.singleton v)
+            (insert <$> source <*> dir1) chan
+            . (insert <$> destination <*> dir2) chan
+        dir1 = OneDirection <$> id <*> destination
+        dir2 = OneDirection <$> id <*> source
+        insert k v = M.insertWith (<>) k [v]
 
 -- A path is either a path to the node itself or a path to anther node with
 -- a jump count and a capacity
-data Path = PathToSelf | Path Int Word64 deriving (Show)
+data Path = PathToSelf | Path Int Word64 deriving (Show, Eq)
 
 -- GraphWithPath is the annotated graph containing for 
 -- each node all the nodes it has a path to
 type GraphWithPath = Map NodeId (Map NodeId Path)
 
+data Graph = Graph
+    { theGraph :: GraphWithPath
+    , visitedNodes :: Set NodeId 
+    } deriving (Eq, Show)
+
 -- The list of nodeid's are the nodes you wish to pay.
 -- From that the graph is expanded with updateGraphStep using the channels available
-initialGraph :: [NodeId] -> GraphWithPath
-initialGraph ns = M.fromList $ (\n -> (n, M.singleton n PathToSelf)) <$> ns
+initialGraph :: [NodeId] -> Graph
+initialGraph ns = 
+    Graph
+        { theGraph = M.fromList $ (\n -> (n, M.singleton n PathToSelf)) <$> ns
+        , visitedNodes = S.fromList ns
+        }
 
 -- Our final graph with all the available paths
-getGraph :: Int -> Adj -> [NodeId] -> GraphWithPath
+-- Takes the nodes you want to pay as input
+getGraph :: Int -> Adj -> [NodeId] -> Graph
 getGraph maxSteps adjs =
     (!! maxSteps) . iterate (updateGraphStep adjs) . initialGraph
 
 -- Call updateGraph iteratively on the initialGraph. Each time you call you add one more
 -- jump from the payees that you are looking to pay. A max number of jumps should be
 -- an option in the cli args
-updateGraphStep :: Adj -> GraphWithPath -> GraphWithPath
-updateGraphStep adjs graph0 = foldl' insertWithNode graph0 newNodes
+updateGraphStep :: Adj -> Graph -> Graph
+updateGraphStep adjs graph0 = trace ("Number of nodes: " ++ show (length visited))
+    $ Graph
+        { theGraph = foldl' insertWithNode (theGraph graph0) newNodes
+        , visitedNodes = visited <> newNodes
+        }
     where
-        visited = M.keys graph0
+        visited = visitedNodes graph0
         newNodes = 
-            (`S.difference` S.fromList visited)
-            . S.map direction 
-            . S.unions 
-            . mapMaybe (`M.lookup` adjs) 
-            $ visited
+            S.fromList
+                . fmap direction
+                . mconcat
+                . mapMaybe (`M.lookup` adjs) 
+                $ toList visited
 
         insertWithNode :: GraphWithPath -> NodeId -> GraphWithPath
-        insertWithNode graph node = foldl' updateWithChannel graph $ S.map channel adj
-            where Just adj = M.lookup node adjs
+        insertWithNode graph node 
+            | Just adj <- M.lookup node adjs = 
+                foldl' updateWithChannel graph $ map channel adj
+            | otherwise = graph
 
         -- Use the channel to update all the path data in the graph
         updateWithChannel :: GraphWithPath -> Channel -> GraphWithPath
         updateWithChannel graph chan = 
-            M.insert sourceNode (updatePath chan sourcePath destPath)
+            -- trace ("Path update: " ++ show sourcePath ++ show newSourcePath) $
+            M.insert sourceNode newSourcePath
             . M.insert destNode (updatePath chan destPath sourcePath)
             $ graph
             where
-                sourceNode = node1 chan
+                sourceNode = source chan
                 sourcePath = M.findWithDefault mempty sourceNode graph
-                destNode = node2 chan
+                destNode = destination chan
                 destPath = M.findWithDefault mempty destNode graph
+                newSourcePath = updatePath chan sourcePath destPath
 
         updatePath :: 
             Channel ->
@@ -109,6 +131,7 @@ updateGraphStep adjs graph0 = foldl' insertWithNode graph0 newNodes
           PathToSelf -> if capacity chan > nodeCap
                          then Just $ Path 1 (capacity chan)
                          else Just nodePath
+
 
         -- If the node does not have a path to another node, but the 
         -- neighbor does, then there now is a path with the channel

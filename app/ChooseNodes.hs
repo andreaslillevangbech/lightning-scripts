@@ -1,17 +1,22 @@
-module Main where
+{-# LANGUAGE OverloadedStrings #-}
 
 import Control.Exception (throwIO)
-import Data.Map.Strict (Map)
+import Data.Map.Lazy (Map)
 import qualified Data.Map.Strict as Map
 import Data.Yaml (decodeFileEither)
 import qualified LnTools as L
 import LnTools (Payee (..), Channel, NodeId)
 import LnTools.Analysis (bestCapacity, bestConnected, shortestPath)
-import LnTools.Network (Path, getGraph, parseChannels)
+import LnTools.Network (Path, getGraph, parseChannels, Graph (..))
+import qualified Data.Text.IO as TIO
+import qualified Data.Text as T
+import Data.Text (Text)
 
 -- Command line options
 import Control.Applicative ((<**>))
 import qualified Options.Applicative as Opt
+
+import Debug.Trace
 
 main :: IO ()
 main = do
@@ -19,21 +24,32 @@ main = do
     channels <- fmap L.unChannels . throwEither =<< decodeFileEither (channelFile config)
     payees <- throwEither =<< decodeFileEither (payeeFile config)
     let out = analysis (maxJumps config) payees channels
-    putStr . showResult $ out
+    TIO.putStr . showResult $ out
         where throwEither = either throwIO pure
 
-
-analysis :: Int -> [Payee] -> [Channel] -> Map NodeId (Map NodeId Path)
+analysis :: 
+    Int -> 
+    [Payee] -> 
+    [Channel] -> 
+    Map NodeId (Map NodeId Path)
 analysis maxJumps payees channels =
-  shortestPath payees . bestCapacity . bestConnected $
-  getGraph maxJumps (parseChannels channels) (node <$> payees)
+  shortestPath payees 
+    . (trace <$> (<>) "full capacity:\n" . T.unpack . T.unlines . Map.keys <*> id)
+    . bestCapacity 
+    . (trace <$> (<>) "best connected:\n" . show . length . Map.keys <*> id)
+    . bestConnected 
+    . (trace <$> (<>) "Max Sizes: " . show . maximum . map Map.size . Map.elems <*> id)
+    . theGraph
+    $ getGraph maxJumps (parseChannels channels) (node <$> payees)
 
-showResult :: Map NodeId (Map NodeId Path) -> String
-showResult out = 
-    unlines . mconcat $ 
+showResult :: Map NodeId (Map NodeId Path) -> Text
+showResult out = let count = Map.size out in
+    if count == 0 then "No nodes with paths to all Payees\n" else
+    T.unlines . mconcat $ 
         [
-            [ "Count: " <> show (Map.size out)
-            , "Nodes:"
+            [ "Result count: " <> (T.pack . show $ count)
+            , "Path info: " <> (T.pack . show $ Map.elems out)
+            , "Best nodes:"
             ]
         , ("  - " <>) <$> Map.keys out
         ]
@@ -72,6 +88,4 @@ cliConfig = Opt.execParser $ Opt.info (opts <**> Opt.helper) desc
 
         defaultChannelFile = "channels.json"
         defaultPayeeFile = "payees.yaml"
-        defaultJumps = 3
-
-
+        defaultJumps = 4
