@@ -33,8 +33,8 @@ instance FromJSON Channel where
 -- Output from 'lncli describegraph'
 -- data ChannelLND = ChannelLND
 --     { channelId :: Word64
---     , node1 :: NodeId
---     , node2 :: NodeId
+--     , source :: NodeId
+--     , destination :: NodeId
 --     , capacity :: Word64
 --     } deriving (Eq, Show, Ord)
 -- instance FromJSON Channel where
