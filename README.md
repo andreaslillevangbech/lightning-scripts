@@ -7,13 +7,13 @@ The LnTools library has tools for exploring the visible network given the connec
 The program ChooseNodes expects a list of available channels from c-lightning. You might do something like 
 
 ```
-lightningcli listchannels
+lightningcli listchannels > channels.json
 ```
 
 If you want to use lnd like
 
 ```
-lncli describegraph >> channels.json
+lncli describegraph > channels.json
 ```
 
 then a few changes is needed in parsing the json file. See src/LnTools.hs.
